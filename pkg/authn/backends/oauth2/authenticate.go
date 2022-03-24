@@ -99,7 +99,7 @@ func (b *Backend) Authenticate(r *requests.Request) error {
 			var reqRedirectURI string
 			if len(b.Config.CallbackUrl) > 0 {
 				if strings.HasPrefix(b.Config.CallbackUrl, "/") {
-					reqRedirectURI = reqPath + b.Config.CallbackUrl
+					reqRedirectURI = r.Upstream.Request.Host + b.Config.CallbackUrl
 				} else {
 					reqRedirectURI = b.Config.CallbackUrl
 				}
