@@ -17,7 +17,7 @@ This project is a fork of https://github.com/greenpau/go-authcrunch.
 If you want to use it, you need to add a replace line to your go.mod like so:
 
 ```
-replace github.com/greenpau/go-authcrunch@<version> => github.com/toowoxx/go-authcrunch@<version>
+replace github.com/greenpau/go-authcrunch <version> => github.com/toowoxx/go-authcrunch <version>
 ```
 
 We may change this in the future but for now we'll keep the original module name to ease upstream merges.
