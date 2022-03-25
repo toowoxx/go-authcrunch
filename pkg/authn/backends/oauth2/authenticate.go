@@ -15,7 +15,7 @@
 package oauth2
 
 import (
-	//"encoding/base64"
+	// "encoding/base64"
 	"encoding/json"
 	"io/ioutil"
 	"net"
@@ -97,11 +97,11 @@ func (b *Backend) Authenticate(r *requests.Request) error {
 			)
 
 			var reqRedirectURI string
-			if len(b.Config.CallbackUrl) > 0 {
-				if strings.HasPrefix(b.Config.CallbackUrl, "/") {
-					reqRedirectURI = r.Upstream.Request.Host + b.Config.CallbackUrl
+			if len(b.Config.CallbackURL) > 0 {
+				if strings.HasPrefix(b.Config.CallbackURL, "/") {
+					reqRedirectURI = r.Upstream.Request.Host + b.Config.CallbackURL
 				} else {
-					reqRedirectURI = b.Config.CallbackUrl
+					reqRedirectURI = b.Config.CallbackURL
 				}
 			} else {
 				reqRedirectURI = reqPath + "/authorization-code-callback"
@@ -202,11 +202,11 @@ func (b *Backend) Authenticate(r *requests.Request) error {
 
 	if b.Config.JsCallbackEnabled {
 		params.Set("redirect_uri", reqPath+"/authorization-code-js-callback")
-	} else if len(b.Config.CallbackUrl) > 0 {
-		if strings.HasPrefix(b.Config.CallbackUrl, "/") {
-			params.Set("redirect_uri", reqPath+b.Config.CallbackUrl)
+	} else if len(b.Config.CallbackURL) > 0 {
+		if strings.HasPrefix(b.Config.CallbackURL, "/") {
+			params.Set("redirect_uri", reqPath+b.Config.CallbackURL)
 		} else {
-			params.Set("redirect_uri", b.Config.CallbackUrl)
+			params.Set("redirect_uri", b.Config.CallbackURL)
 		}
 	} else {
 		params.Set("redirect_uri", reqPath+"/authorization-code-callback")
@@ -326,7 +326,7 @@ func newBrowser() (*http.Client, error) {
 		TLSHandshakeTimeout: 5 * time.Second,
 	}
 	return &http.Client{
-		//Jar:       cj,
+		// Jar:       cj,
 		Timeout:   time.Second * 10,
 		Transport: tr,
 	}, nil
