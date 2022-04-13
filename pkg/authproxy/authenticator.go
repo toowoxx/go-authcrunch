@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package errors
+package authproxy
 
-// Identity Provider Catalog Errors
-const (
-	ErrProviderCatalogRegisterContextNotRegistered StandardError = "idp catalog: provider context does not registered"
-	ErrIdentityProviderConfigInvalid               StandardError = "invalid idp config: %v"
-)
+// Authenticator is an interface to an identity store.
+type Authenticator interface {
+	GetName() string
+	BasicAuth(*Request) error
+	APIKeyAuth(*Request) error
+}

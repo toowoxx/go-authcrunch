@@ -19,19 +19,24 @@ import (
 	"github.com/greenpau/go-authcrunch/pkg/authn"
 	"github.com/greenpau/go-authcrunch/pkg/authz"
 	"github.com/greenpau/go-authcrunch/pkg/credentials"
+	"github.com/greenpau/go-authcrunch/pkg/errors"
 	"github.com/greenpau/go-authcrunch/pkg/idp"
 	"github.com/greenpau/go-authcrunch/pkg/ids"
 	"github.com/greenpau/go-authcrunch/pkg/messaging"
+	"github.com/greenpau/go-authcrunch/pkg/registry"
 )
 
 // Config is a configuration of Server.
 type Config struct {
-	Credentials           *credentials.Config           `json:"credentials,omitempty" xml:"credentials,omitempty" yaml:"credentials,omitempty"`
-	AuthenticationPortals []*authn.PortalConfig         `json:"authentication_portals,omitempty" xml:"authentication_portals,omitempty" yaml:"authentication_portals,omitempty"`
-	AuthorizationPolicies []*authz.PolicyConfig         `json:"authorization_policies,omitempty" xml:"authorization_policies,omitempty" yaml:"authorization_policies,omitempty"`
-	Messaging             *messaging.Config             `json:"messaging,omitempty" xml:"messaging,omitempty" yaml:"messaging,omitempty"`
-	IdentityStores        []*ids.IdentityStoreConfig    `json:"identity_stores,omitempty" xml:"identity_stores,omitempty" yaml:"identity_stores,omitempty"`
-	IdentityProviders     []*idp.IdentityProviderConfig `json:"identity_providers,omitempty" xml:"identity_providers,omitempty" yaml:"identity_providers,omitempty"`
+	Credentials               *credentials.Config           `json:"credentials,omitempty" xml:"credentials,omitempty" yaml:"credentials,omitempty"`
+	Messaging                 *messaging.Config             `json:"messaging,omitempty" xml:"messaging,omitempty" yaml:"messaging,omitempty"`
+	AuthenticationPortals     []*authn.PortalConfig         `json:"authentication_portals,omitempty" xml:"authentication_portals,omitempty" yaml:"authentication_portals,omitempty"`
+	AuthorizationPolicies     []*authz.PolicyConfig         `json:"authorization_policies,omitempty" xml:"authorization_policies,omitempty" yaml:"authorization_policies,omitempty"`
+	IdentityStores            []*ids.IdentityStoreConfig    `json:"identity_stores,omitempty" xml:"identity_stores,omitempty" yaml:"identity_stores,omitempty"`
+	IdentityProviders         []*idp.IdentityProviderConfig `json:"identity_providers,omitempty" xml:"identity_providers,omitempty" yaml:"identity_providers,omitempty"`
+	disabledIdentityStores    map[string]interface{}
+	disabledIdentityProviders map[string]interface{}
+	UserRegistries            []*registry.UserRegistryConfig `json:"user_registries,omitempty" xml:"user_registries,omitempty" yaml:"user_registries,omitempty"`
 }
 
 // NewConfig returns an instance of Config.
@@ -99,17 +104,62 @@ func (cfg *Config) Validate() error {
 		return fmt.Errorf("no portals and gatekeepers found")
 	}
 
-	for _, portalCfg := range cfg.AuthenticationPortals {
-		portalCfg.SetCredentials(cfg.Credentials)
-		portalCfg.SetMessaging(cfg.Messaging)
-		if err := portalCfg.ValidateCredentials(); err != nil {
+	identityStoreUserRegistry := make(map[string]string)
+	for _, userRegistry := range cfg.UserRegistries {
+		userRegistry.SetCredentials(cfg.Credentials)
+		userRegistry.SetMessaging(cfg.Messaging)
+		if err := userRegistry.ValidateMessaging(); err != nil {
 			return err
 		}
+		var identityStoreFound bool
+		for _, identityStore := range cfg.IdentityStores {
+			if identityStore.Name == userRegistry.IdentityStore {
+				identityStoreFound = true
+				identityStoreUserRegistry[identityStore.Name] = userRegistry.IdentityStore
+				break
+			}
+		}
+		if !identityStoreFound {
+			return fmt.Errorf(
+				"identity store %q referenced in %q user registry not found",
+				userRegistry.IdentityStore, userRegistry.Name,
+			)
+		}
+	}
+
+	// Validate auth portal configurations.
+	for _, portalCfg := range cfg.AuthenticationPortals {
+		// If there are no excplicitly specified identity stores and providers in a portal, add all of them.
+		if len(portalCfg.IdentityStores) == 0 && len(portalCfg.IdentityProviders) == 0 {
+			for _, entry := range cfg.IdentityStores {
+				portalCfg.IdentityStores = append(portalCfg.IdentityStores, entry.Name)
+			}
+			for _, entry := range cfg.IdentityProviders {
+				portalCfg.IdentityProviders = append(portalCfg.IdentityProviders, entry.Name)
+			}
+		}
+
+		if len(portalCfg.IdentityStores) == 0 && len(portalCfg.IdentityProviders) == 0 {
+			return errors.ErrPortalConfigBackendsNotFound
+		}
+
+		// Filter out disabled identity store names.
+		portalCfg.IdentityStores = cfg.filterDisabledIdentityStores(portalCfg.IdentityStores)
 
 		// Vealidate that there are no duplicate or overlapping identity store and providers.
+		authByName := make(map[string]string)
 		authByRealm := make(map[string]string)
 
 		for _, storeName := range portalCfg.IdentityStores {
+			if v, exists := authByName[storeName]; exists {
+				return fmt.Errorf(
+					"identity store %q has the same name as %s",
+					storeName, v,
+				)
+			}
+
+			authByName[storeName] = "another identity store"
+
 			var storeConfig *ids.IdentityStoreConfig
 			for _, entry := range cfg.IdentityStores {
 				storeConfig = entry
@@ -132,10 +182,28 @@ func (cfg *Config) Validate() error {
 					)
 				}
 				authByRealm[realmName] = storeName
+				authByName[storeName] = "identity store in " + realmName + " realm"
+			}
+
+			// Add regustry store if configured.
+			if v, exists := identityStoreUserRegistry[storeName]; exists {
+				portalCfg.UserRegistries = append(portalCfg.UserRegistries, v)
 			}
 		}
 
+		// Filter out disabled identity store names.
+		portalCfg.IdentityProviders = cfg.filterDisabledIdentityProviders(portalCfg.IdentityProviders)
+
 		for _, providerName := range portalCfg.IdentityProviders {
+			if v, exists := authByName[providerName]; exists {
+				return fmt.Errorf(
+					"identity provider %q has the same name as %s",
+					providerName, v,
+				)
+			}
+
+			authByName[providerName] = "another identity provider"
+
 			var providerConfig *idp.IdentityProviderConfig
 			for _, entry := range cfg.IdentityProviders {
 				providerConfig = entry
@@ -158,9 +226,69 @@ func (cfg *Config) Validate() error {
 					)
 				}
 				authByRealm[realmName] = providerName
+				authByName[providerName] = "identity provider in " + realmName + " realm"
 			}
 		}
 	}
 
+	return nil
+}
+
+// AddDisabledIdentityStore adds the names of disabled identity stores.
+func (cfg *Config) AddDisabledIdentityStore(s string) {
+	if cfg.disabledIdentityStores == nil {
+		cfg.disabledIdentityStores = map[string]interface{}{
+			s: true,
+		}
+		return
+	}
+	cfg.disabledIdentityStores[s] = true
+}
+
+// AddDisabledIdentityProvider adds the names of disabled identity providers.
+func (cfg *Config) AddDisabledIdentityProvider(s string) {
+	if cfg.disabledIdentityProviders == nil {
+		cfg.disabledIdentityProviders = map[string]interface{}{
+			s: true,
+		}
+		return
+	}
+	cfg.disabledIdentityProviders[s] = true
+}
+
+func (cfg *Config) filterDisabledIdentityStores(arr []string) []string {
+	var output []string
+	if len(arr) == 0 || cfg.disabledIdentityStores == nil {
+		return arr
+	}
+	for _, s := range arr {
+		if _, exists := cfg.disabledIdentityStores[s]; exists {
+			continue
+		}
+		output = append(output, s)
+	}
+	return output
+}
+
+func (cfg *Config) filterDisabledIdentityProviders(arr []string) []string {
+	var output []string
+	if len(arr) == 0 || cfg.disabledIdentityProviders == nil {
+		return arr
+	}
+	for _, s := range arr {
+		if _, exists := cfg.disabledIdentityProviders[s]; exists {
+			continue
+		}
+		output = append(output, s)
+	}
+	return output
+}
+
+// AddUserRegistry adds a user registry configuration.
+func (cfg *Config) AddUserRegistry(r *registry.UserRegistryConfig) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	cfg.UserRegistries = append(cfg.UserRegistries, r)
 	return nil
 }

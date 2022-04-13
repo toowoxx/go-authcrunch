@@ -19,27 +19,44 @@ import (
 )
 
 func sanitize(m map[string]interface{}) map[string]interface{} {
-	i, exists := m["path"]
-	if !exists {
-		return m
-	}
-
 	out := make(map[string]interface{})
 	for k, v := range m {
-		switch k {
-		case "path":
-			switch v := i.(type) {
-			case string:
-				s := strings.ReplaceAll(v, "\n", "")
-				s = strings.ReplaceAll(s, "\r", "")
-				if len(s) > 255 {
-					s = s[:254]
+		switch val := v.(type) {
+		case string:
+			out[k] = sanitizeStr(k, val)
+		case map[string]interface{}:
+			out[k] = sanitize(val)
+		case []interface{}:
+			var entries []string
+			for _, entry := range val {
+				switch s := entry.(type) {
+				case string:
+					entries = append(entries, sanitizeStr(k, s))
 				}
-				out[k] = s
+			}
+			if len(entries) > 0 {
+				out[k] = entries
+			} else {
+				out[k] = v
 			}
 		default:
 			out[k] = v
 		}
 	}
 	return out
+}
+
+func sanitizeStr(k, s string) string {
+	switch k {
+	case "password", "secret", "old_password":
+		return "***masked***"
+	}
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "http://", "hxxp://")
+	s = strings.ReplaceAll(s, "https://", "hxxps://")
+	if len(s) > 255 {
+		s = string(s[:254])
+	}
+	return s
 }
