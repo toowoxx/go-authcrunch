@@ -78,8 +78,7 @@ type Config struct {
 
 	AcceptHeaderEnabled bool `json:"accept_header_enabled,omitempty" xml:"accept_header_enabled,omitempty" yaml:"accept_header_enabled,omitempty"`
 
-	JsCallbackEnabled bool   `json:"js_callback_enabled,omitempty" xml:"js_callback_enabled,omitempty" yaml:"js_callback_enabled,omitempty"`
-	CallbackURL       string `json:"callback_url,omitempty" xml:"callback_url,omitempty" yaml:"callback_url,omitempty"`
+	JsCallbackEnabled bool `json:"js_callback_enabled,omitempty" xml:"js_callback_enabled,omitempty" yaml:"js_callback_enabled,omitempty"`
 
 	ResponseType []string `json:"response_type,omitempty" xml:"response_type,omitempty" yaml:"response_type,omitempty"`
 
